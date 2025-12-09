@@ -24,7 +24,6 @@ export interface EngineStatusInfo {
 
 // 全局缓存
 let globalEngineStatus: EngineStatusInfo | null = null;
-let isLoading = false;
 let loadPromise: Promise<EngineStatusInfo> | null = null;
 const listeners = new Set<(status: EngineStatusInfo) => void>();
 
@@ -44,8 +43,6 @@ const loadEngineStatus = async (): Promise<EngineStatusInfo> => {
   if (loadPromise) {
     return loadPromise;
   }
-
-  isLoading = true;
 
   loadPromise = (async () => {
     try {
@@ -75,7 +72,6 @@ const loadEngineStatus = async (): Promise<EngineStatusInfo> => {
       notifyListeners(status);
       return status;
     } finally {
-      isLoading = false;
       loadPromise = null;
     }
   })();

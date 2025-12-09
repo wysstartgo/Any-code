@@ -68,7 +68,7 @@ pub fn decode_project_path(encoded: &str) -> String {
 }
 
 /// Normalize a path for comparison to detect duplicates
-/// This handles case sensitivity, path separators, and trailing slashes
+/// This handles case sensitivity, path separators, trailing slashes, and platform-specific paths
 pub fn normalize_path_for_comparison(path: &str) -> String {
     let mut normalized = path.to_lowercase();
 
@@ -85,6 +85,23 @@ pub fn normalize_path_for_comparison(path: &str) -> String {
 
     // Normalize path separators - convert all to forward slashes for comparison
     normalized = normalized.replace('\\', "/");
+
+    // ⚡ macOS fix: Remove /private prefix for symlinked system directories
+    // macOS has symlinks: /tmp -> /private/tmp, /var -> /private/var, /etc -> /private/etc
+    // This ensures /private/tmp/foo and /tmp/foo are treated as the same path
+    if normalized.starts_with("/private/tmp/") {
+        normalized = normalized.replacen("/private/tmp/", "/tmp/", 1);
+    } else if normalized.starts_with("/private/var/") {
+        normalized = normalized.replacen("/private/var/", "/var/", 1);
+    } else if normalized.starts_with("/private/etc/") {
+        normalized = normalized.replacen("/private/etc/", "/etc/", 1);
+    } else if normalized == "/private/tmp" {
+        normalized = "/tmp".to_string();
+    } else if normalized == "/private/var" {
+        normalized = "/var".to_string();
+    } else if normalized == "/private/etc" {
+        normalized = "/etc".to_string();
+    }
 
     // Remove trailing slash if present
     if normalized.ends_with('/') && normalized.len() > 1 {

@@ -1,5 +1,4 @@
 import React from "react";
-import { Bot } from "lucide-react";
 import { ClaudeIcon } from "@/components/icons/ClaudeIcon";
 import { CodexIcon } from "@/components/icons/CodexIcon";
 import { GeminiIcon } from "@/components/icons/GeminiIcon";

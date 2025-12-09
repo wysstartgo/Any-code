@@ -586,10 +586,18 @@ fn get_project_path_from_sessions(project_dir: &Path) -> Result<String, String> 
                             if let Some(cwd) = json.get("cwd").and_then(|v| v.as_str()) {
                                 let cleaned_cwd = cwd.replace("\\\\", "\\");
 
+                                // On macOS, avoid canonicalize() as it resolves symlinks and can cause
+                                // path mismatches (e.g., /tmp -> /private/tmp, /var -> /private/var)
+                                // Also, canonicalize() fails if the path doesn't exist (project moved/deleted)
+                                #[cfg(target_os = "macos")]
+                                let normalized_cwd = normalize_macos_path(&cleaned_cwd);
+
+                                #[cfg(target_os = "windows")]
                                 let normalized_cwd = Path::new(&cleaned_cwd)
                                     .canonicalize()
                                     .map(|p| {
                                         let path_str = p.to_string_lossy().to_string();
+                                        // Remove Windows long path prefix (\\?\)
                                         if path_str.starts_with("\\\\?\\") {
                                             path_str[4..].to_string()
                                         } else {
@@ -597,6 +605,10 @@ fn get_project_path_from_sessions(project_dir: &Path) -> Result<String, String> 
                                         }
                                     })
                                     .unwrap_or_else(|_| cleaned_cwd.clone());
+
+                                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                                let normalized_cwd = cleaned_cwd.clone();
+
                                 return Ok(normalized_cwd);
                             }
                         }
@@ -607,4 +619,31 @@ fn get_project_path_from_sessions(project_dir: &Path) -> Result<String, String> 
     }
 
     Err("Could not determine project path from session files".to_string())
+}
+
+/// Normalize macOS paths without using canonicalize()
+/// This avoids issues with:
+/// 1. Symlink resolution (e.g., /tmp -> /private/tmp)
+/// 2. Non-existent paths (project moved/deleted)
+/// 3. iCloud Drive and other special paths
+#[cfg(target_os = "macos")]
+fn normalize_macos_path(path: &str) -> String {
+    let mut normalized = path.to_string();
+
+    // Remove /private prefix if present (macOS symlink target)
+    // This ensures consistency: /private/tmp and /tmp should be treated the same
+    if normalized.starts_with("/private/tmp/") {
+        normalized = normalized.replacen("/private/tmp/", "/tmp/", 1);
+    } else if normalized.starts_with("/private/var/") {
+        normalized = normalized.replacen("/private/var/", "/var/", 1);
+    } else if normalized.starts_with("/private/etc/") {
+        normalized = normalized.replacen("/private/etc/", "/etc/", 1);
+    }
+
+    // Remove trailing slash if present (except for root)
+    if normalized.len() > 1 && normalized.ends_with('/') {
+        normalized.pop();
+    }
+
+    normalized
 }
