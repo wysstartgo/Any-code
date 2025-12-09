@@ -116,7 +116,7 @@ export const GrepWidget: React.FC<GrepWidgetProps> = ({
                 <div className="flex items-start gap-3 text-xs">
                   <div className="flex items-center gap-1.5 min-w-[60px] text-muted-foreground">
                     <FolderOpen className="h-3.5 w-3.5" />
-                    <span className="font-medium">路径</span>
+                    <span className="font-medium">{t('widget.path')}</span>
                   </div>
                   <code className="flex-1 font-mono bg-muted/50 px-2 py-0.5 rounded truncate text-foreground/80">
                     {path}
