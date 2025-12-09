@@ -108,38 +108,63 @@ export function getParentToolUseId(message: ClaudeStreamMessage): string | null 
 }
 
 /**
- * 判断消息是否为"技术性"消息（可以聚合）
+ * 获取技术性消息的具体聚合类型
  * 
- * 可聚合的消息特征：
- * 1. 类型为 assistant 或 thinking
- * 2. 仅包含 tool_use, tool_result, thinking
- * 3. 不包含用户可见的文本内容（或者文本内容为空）
+ * 返回值：
+ * - 'tool': 仅包含工具调用或结果
+ * - 'thinking': 仅包含思考内容
+ * - null: 包含文本或其他不可聚合内容
  */
-function isTechnicalMessage(message: ClaudeStreamMessage): boolean {
-  // 如果是 thinking 类型的消息，总是可以聚合
-  if (message.type === 'thinking') return true;
+function getTechnicalMessageType(message: ClaudeStreamMessage): 'tool' | 'thinking' | null {
+  // Thinking 类型的消息
+  if (message.type === 'thinking') return 'thinking';
   
   // 必须是 assistant 类型
-  if (message.type !== 'assistant') return false;
+  if (message.type !== 'assistant') return null;
   
   const content = message.message?.content;
-  if (!Array.isArray(content)) return false; // 纯字符串文本不聚合
-  
-  // 检查内容项
-  return content.every((item: any) => {
-    // 允许的类型
-    if (item.type === 'tool_use') return true;
-    if (item.type === 'tool_result') return true;
-    if (item.type === 'thinking') return true;
-    
-    // 文本类型：只有空白字符才允许
-    if (item.type === 'text') {
-      return !item.text || item.text.trim().length === 0;
+  if (!Array.isArray(content)) return null;
+
+  let hasThinking = false;
+  let hasTool = false;
+  let hasText = false;
+
+  content.forEach((item: any) => {
+    if (item.type === 'thinking') {
+      hasThinking = true;
+    } else if (item.type === 'tool_use' || item.type === 'tool_result') {
+      hasTool = true;
+    } else if (item.type === 'text') {
+      if (item.text && item.text.trim().length > 0) {
+        hasText = true;
+      }
     }
-    
-    // 其他类型不允许聚合
-    return false;
   });
+
+  // 如果包含可见文本，不可聚合
+  if (hasText) return null;
+
+  // 如果既有 Thinking 又有 Tool，作为混合类型（通常优先视为 Tool 组或独立处理，根据需求这里可以返回 tool 以允许合并，或者 null 以打断）
+  // 用户希望 Thinking 和 Tool 分离。
+  // 场景 A: 纯 Thinking -> 'thinking'
+  // 场景 B: 纯 Tool -> 'tool'
+  // 场景 C: Thinking + Tool 在同一条消息 -> 这是一个天然的组合，我们应该返回什么？
+  // 如果返回 'tool'，它会和前后的 tool 合并。
+  // 如果返回 'thinking'，它会和前后的 thinking 合并。
+  // 如果返回 null，它不参与合并。
+  
+  if (hasThinking && hasTool) {
+    // 这是一个复杂的混合消息，为了安全起见，我们暂不将其与其他消息合并，
+    // 以免混淆。它自身内部已经包含了 Thinking 和 Tool。
+    // 但是，如果后续还有 Tool，用户可能希望合并后续的 Tool。
+    // 让我们保守一点，将其视为 'mixed'，不参与外部聚合。
+    return null;
+  }
+
+  if (hasThinking) return 'thinking';
+  if (hasTool) return 'tool';
+
+  return null;
 }
 
 /**
@@ -269,13 +294,17 @@ export function groupMessages(messages: ClaudeStreamMessage[]): MessageGroup[] {
   });
 
   // 第四遍：合并连续的技术性消息（Tools & Thinking）
-  // 遍历 intermediateGroups，将连续的符合条件的消息合并为 'aggregated' 类型
+  // ✅ FIX: 仅允许同类型的技术性消息合并（Thinking 与 Tool 分离）
   const finalGroups: MessageGroup[] = [];
-  let currentAggregation: { messages: ClaudeStreamMessage[]; startIndex: number } | null = null;
+  let currentAggregation: { 
+    messages: ClaudeStreamMessage[]; 
+    startIndex: number;
+    aggType: 'tool' | 'thinking'; // 记录当前聚合组的类型
+  } | null = null;
 
   intermediateGroups.forEach((group) => {
+    // 如果是子代理组，打断聚合
     if (group.type === 'subagent') {
-      // 遇到子代理组，先结算当前的聚合
       if (currentAggregation) {
         finalGroups.push({
           type: 'aggregated',
@@ -285,26 +314,52 @@ export function groupMessages(messages: ClaudeStreamMessage[]): MessageGroup[] {
         currentAggregation = null;
       }
       finalGroups.push(group);
-    } else {
-      // normal group
-      const msg = group.message;
-      if (isTechnicalMessage(msg)) {
-        if (!currentAggregation) {
-          currentAggregation = { messages: [], startIndex: group.index };
-        }
-        currentAggregation.messages.push(msg);
-      } else {
-        // 不可聚合的消息，先结算之前的
-        if (currentAggregation) {
+      return;
+    }
+
+    // 处理普通消息
+    const msg = group.message;
+    const msgType = getTechnicalMessageType(msg);
+
+    if (msgType) {
+      // 如果有正在进行的聚合
+      if (currentAggregation) {
+        // 检查类型是否一致
+        if (currentAggregation.aggType === msgType) {
+          // 类型一致，合并
+          currentAggregation.messages.push(msg);
+        } else {
+          // 类型不一致（例如 Thinking -> Tool），结算上一个聚合，开始新的聚合
           finalGroups.push({
             type: 'aggregated',
             messages: currentAggregation.messages,
             index: currentAggregation.startIndex
           });
-          currentAggregation = null;
+          currentAggregation = { 
+            messages: [msg], 
+            startIndex: group.index,
+            aggType: msgType 
+          };
         }
-        finalGroups.push(group);
+      } else {
+        // 开始新的聚合
+        currentAggregation = { 
+          messages: [msg], 
+          startIndex: group.index,
+          aggType: msgType 
+        };
       }
+    } else {
+      // 不可聚合的消息（文本等），结算之前的聚合
+      if (currentAggregation) {
+        finalGroups.push({
+          type: 'aggregated',
+          messages: currentAggregation.messages,
+          index: currentAggregation.startIndex
+        });
+        currentAggregation = null;
+      }
+      finalGroups.push(group);
     }
   });
 
