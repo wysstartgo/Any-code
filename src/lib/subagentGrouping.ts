@@ -369,10 +369,11 @@ export function groupMessages(messages: ClaudeStreamMessage[]): MessageGroup[] {
 
   // 结算最后的聚合
   if (currentAggregation) {
+    const agg = currentAggregation; // Fix: Assign to const to narrow type
     finalGroups.push({
       type: 'aggregated',
-      messages: currentAggregation.messages,
-      index: currentAggregation.startIndex
+      messages: agg.messages,
+      index: agg.startIndex
     });
   }
 
