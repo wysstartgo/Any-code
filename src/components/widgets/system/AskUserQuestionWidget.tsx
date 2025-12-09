@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useMemo, useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { HelpCircle, CheckCircle, MessageCircle, ChevronDown, ChevronUp, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -73,6 +74,7 @@ export const AskUserQuestionWidget: React.FC<AskUserQuestionWidgetProps> = ({
   answers = {},
   result,
 }) => {
+  const { t } = useTranslation();
   const isError = result?.is_error;
   const hasAnswers = Object.keys(answers).length > 0;
 
@@ -254,11 +256,11 @@ export const AskUserQuestionWidget: React.FC<AskUserQuestionWidgetProps> = ({
                       : "text-blue-500"
                 )}
               >
-                {hasAnswers ? "用户已回答问题" : "Claude 正在询问用户"}
+                {hasAnswers ? t('widget.userAnswered') : t('widget.claudeAsking')}
               </span>
               {questions.length > 0 && (
                 <span className="text-xs text-muted-foreground">
-                  ({questions.length} 个问题)
+                  {t('widget.questionsCount', { count: questions.length })}
                 </span>
               )}
             </div>
@@ -372,7 +374,7 @@ export const AskUserQuestionWidget: React.FC<AskUserQuestionWidgetProps> = ({
                                     {/* 选中标签 */}
                                     {isSelected && (
                                       <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-500 text-white shadow-sm">
-                                        已选择
+                                        {t('widget.selected')}
                                       </span>
                                     )}
                                   </div>
@@ -396,7 +398,7 @@ export const AskUserQuestionWidget: React.FC<AskUserQuestionWidgetProps> = ({
                         {q.multiSelect && (
                           <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                             <span className="text-blue-500">ℹ️</span>
-                            <span>支持多选</span>
+                            <span>{t('widget.multipleChoice')}</span>
                           </div>
                         )}
                       </div>
