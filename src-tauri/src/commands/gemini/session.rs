@@ -17,6 +17,7 @@ use super::parser::{
 use super::types::{GeminiExecutionOptions, GeminiInstallStatus, GeminiProcessState};
 use crate::claude_binary::detect_binary_for_tool;
 use crate::commands::claude::apply_no_window_async;
+use crate::commands::wsl_utils;
 
 // ============================================================================
 // Binary Detection
@@ -172,11 +173,41 @@ pub fn find_gemini_binary() -> Result<String, String> {
         }
     }
 
+    // 4. Windows only: Check WSL for Gemini CLI
+    #[cfg(target_os = "windows")]
+    {
+        let wsl_runtime = wsl_utils::get_gemini_wsl_runtime();
+        if wsl_runtime.enabled {
+            if let Some(ref wsl_path) = wsl_runtime.gemini_path_in_wsl {
+                log::info!(
+                    "Found Gemini CLI in WSL ({:?}): {}",
+                    wsl_runtime.distro,
+                    wsl_path
+                );
+                // Return a special marker to indicate WSL mode
+                return Ok(format!("WSL:{}", wsl_path));
+            }
+        }
+    }
+
     Err("Gemini CLI not found. Install with: npm install -g @google/gemini-cli".to_string())
 }
 
 /// Get Gemini CLI version
 pub fn get_gemini_version(gemini_path: &str) -> Option<String> {
+    // Check if this is a WSL path
+    if gemini_path.starts_with("WSL:") {
+        #[cfg(target_os = "windows")]
+        {
+            let wsl_runtime = wsl_utils::get_gemini_wsl_runtime();
+            return wsl_utils::get_wsl_gemini_version(wsl_runtime.distro.as_deref());
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            return None;
+        }
+    }
+
     let mut cmd = std::process::Command::new(gemini_path);
     cmd.arg("--version");
 
@@ -219,11 +250,20 @@ fn test_gemini_binary(path: &str) -> bool {
 pub async fn check_gemini_installed() -> Result<GeminiInstallStatus, String> {
     match find_gemini_binary() {
         Ok(path) => {
+            let is_wsl = path.starts_with("WSL:");
             let version = get_gemini_version(&path);
+
+            // Format the version string with WSL indicator if applicable
+            let display_version = if is_wsl {
+                version.map(|v| format!("WSL: {}", v))
+            } else {
+                version
+            };
+
             Ok(GeminiInstallStatus {
                 installed: true,
                 path: Some(path),
-                version,
+                version: display_version,
                 error: None,
             })
         }
@@ -287,7 +327,19 @@ pub async fn execute_gemini(
     if let Some(dirs) = &options.include_directories {
         if !dirs.is_empty() {
             args.push("--include-directories".to_string());
-            args.push(dirs.join(","));
+            // For WSL mode, convert Windows paths to WSL paths
+            #[cfg(target_os = "windows")]
+            let dirs_str = if gemini_path.starts_with("WSL:") {
+                dirs.iter()
+                    .map(|d| wsl_utils::windows_to_wsl_path(d))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            } else {
+                dirs.join(",")
+            };
+            #[cfg(not(target_os = "windows"))]
+            let dirs_str = dirs.join(",");
+            args.push(dirs_str);
         }
     }
 
@@ -299,18 +351,54 @@ pub async fn execute_gemini(
     // Note: Prompt will be passed via stdin to support multiline content
     // Command line arguments have length limits and special character issues on Windows
 
-    log::info!("Gemini command: {} {:?}", gemini_path, args);
+    // Build command based on execution mode (native or WSL)
+    let cmd = if gemini_path.starts_with("WSL:") {
+        // WSL mode
+        #[cfg(target_os = "windows")]
+        {
+            let wsl_runtime = wsl_utils::get_gemini_wsl_runtime();
+            log::info!(
+                "Gemini command (WSL): gemini {:?} in distro {:?}",
+                args,
+                wsl_runtime.distro
+            );
 
-    // Build command
-    let mut cmd = Command::new(&gemini_path);
-    cmd.args(&args);
-    cmd.current_dir(&options.project_path);
+            let mut cmd = wsl_utils::build_wsl_command_async(
+                "gemini",
+                &args,
+                Some(&options.project_path),
+                wsl_runtime.distro.as_deref(),
+            );
 
-    // Set environment variables from config
-    let env_vars = build_gemini_env(&config);
-    for (key, value) in env_vars {
-        cmd.env(&key, &value);
-    }
+            // Set environment variables from config
+            // Note: Environment variables will be passed to WSL environment
+            let env_vars = build_gemini_env(&config);
+            for (key, value) in env_vars {
+                cmd.env(&key, &value);
+            }
+
+            cmd
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            return Err("WSL mode is only available on Windows".to_string());
+        }
+    } else {
+        // Native mode
+        log::info!("Gemini command: {} {:?}", gemini_path, args);
+
+        let mut cmd = Command::new(&gemini_path);
+        cmd.args(&args);
+        cmd.current_dir(&options.project_path);
+
+        // Set environment variables from config
+        let env_vars = build_gemini_env(&config);
+        for (key, value) in env_vars {
+            cmd.env(&key, &value);
+        }
+
+        cmd
+    };
 
     // Execute process with prompt via stdin
     execute_gemini_process(

@@ -139,11 +139,14 @@ use commands::gemini::{
     get_gemini_session_detail,
     get_gemini_session_logs,
     get_gemini_system_prompt,
+    // Gemini WSL commands
+    get_gemini_wsl_mode_config,
     list_gemini_sessions,
     record_gemini_prompt_completed,
     record_gemini_prompt_sent,
     revert_gemini_to_prompt,
     save_gemini_system_prompt,
+    set_gemini_wsl_mode_config,
     switch_gemini_provider,
     test_gemini_provider_connection,
     update_gemini_config,
@@ -507,6 +510,9 @@ fn main() {
             delete_gemini_provider_config,
             clear_gemini_provider_config,
             test_gemini_provider_connection,
+            // Gemini WSL Commands
+            get_gemini_wsl_mode_config,
+            set_gemini_wsl_mode_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

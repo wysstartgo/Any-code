@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+use crate::commands::wsl_utils;
+
 // ============================================================================
 // Configuration Types
 // ============================================================================
@@ -458,4 +460,90 @@ pub fn delete_session(project_path: &str, session_id: &str) -> Result<(), String
     }
 
     Err(format!("Session {} not found", session_id))
+}
+
+// ============================================================================
+// Gemini WSL Configuration Commands
+// ============================================================================
+
+/// Gemini WSL mode information for frontend
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeminiWslModeInfo {
+    /// Current mode: "auto", "native", or "wsl"
+    pub mode: String,
+    /// Configured WSL distro (if any)
+    pub wsl_distro: Option<String>,
+    /// Is WSL available on this system
+    pub wsl_available: bool,
+    /// Available WSL distros
+    pub available_distros: Vec<String>,
+    /// Is WSL mode currently active
+    pub wsl_enabled: bool,
+    /// Gemini path in WSL (if detected)
+    pub wsl_gemini_path: Option<String>,
+    /// Gemini version in WSL (if detected)
+    pub wsl_gemini_version: Option<String>,
+    /// Is native Gemini available
+    pub native_available: bool,
+}
+
+/// Get Gemini WSL mode configuration
+#[tauri::command]
+pub async fn get_gemini_wsl_mode_config() -> Result<GeminiWslModeInfo, String> {
+    let config = wsl_utils::get_gemini_wsl_config();
+    let runtime = wsl_utils::get_gemini_wsl_runtime();
+
+    let mode_str = match config.mode {
+        wsl_utils::GeminiMode::Auto => "auto",
+        wsl_utils::GeminiMode::Native => "native",
+        wsl_utils::GeminiMode::Wsl => "wsl",
+    };
+
+    let wsl_available = wsl_utils::is_wsl_available();
+    let available_distros = wsl_utils::get_wsl_distros();
+    let native_available = wsl_utils::is_native_gemini_available();
+
+    let wsl_gemini_version = if runtime.enabled {
+        wsl_utils::get_wsl_gemini_version(runtime.distro.as_deref())
+    } else {
+        None
+    };
+
+    Ok(GeminiWslModeInfo {
+        mode: mode_str.to_string(),
+        wsl_distro: config.wsl_distro.clone(),
+        wsl_available,
+        available_distros,
+        wsl_enabled: runtime.enabled,
+        wsl_gemini_path: runtime.gemini_path_in_wsl.clone(),
+        wsl_gemini_version,
+        native_available,
+    })
+}
+
+/// Set Gemini WSL mode configuration
+#[tauri::command]
+pub async fn set_gemini_wsl_mode_config(mode: String, wsl_distro: Option<String>) -> Result<(), String> {
+    let gemini_mode = match mode.as_str() {
+        "auto" => wsl_utils::GeminiMode::Auto,
+        "native" => wsl_utils::GeminiMode::Native,
+        "wsl" => wsl_utils::GeminiMode::Wsl,
+        _ => return Err(format!("Invalid mode: {}. Must be 'auto', 'native', or 'wsl'", mode)),
+    };
+
+    let config = wsl_utils::GeminiWslConfig {
+        mode: gemini_mode,
+        wsl_distro,
+    };
+
+    wsl_utils::save_gemini_wsl_config(&config)?;
+
+    log::info!(
+        "[Gemini WSL] Configuration saved: mode={}, distro={:?}",
+        mode,
+        config.wsl_distro
+    );
+
+    Ok(())
 }
