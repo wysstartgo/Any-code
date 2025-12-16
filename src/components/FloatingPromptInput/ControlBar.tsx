@@ -177,19 +177,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
         />
       )}
 
-      {/* Loading Indicator */}
-      {isLoading && (
-        <motion.div
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: 20 }}
-          transition={{ duration: 0.2 }}
-          className="flex items-center gap-1.5 px-2 py-1 bg-blue-50/50 dark:bg-blue-900/20 border border-blue-200/50 dark:border-blue-800/50 rounded-md text-xs text-blue-600 dark:text-blue-400 h-8"
-        >
-          <div className="rotating-symbol text-blue-600 dark:text-blue-400" style={{ width: '12px', height: '12px' }} />
-          <span>{t('promptInput.processing')}</span>
-        </motion.div>
-      )}
+      {/* Loading Indicator - 移至 SessionMessages 中显示为 CLI 风格 */}
 
       <div className="flex-1" />
 

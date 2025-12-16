@@ -4,6 +4,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { StreamMessageV2 } from "@/components/message";
 import type { MessageGroup } from "@/lib/subagentGrouping";
 import { useSession } from "@/contexts/SessionContext";
+import { CliProcessingIndicator } from "./CliProcessingIndicator";
 
 /**
  * ✅ MeasurableItem: 自动监听高度变化的虚拟列表项
@@ -90,13 +91,16 @@ interface SessionMessagesProps {
   isLoading: boolean;
   error?: string | null;
   parentRef: React.RefObject<HTMLDivElement>;
+  /** 取消执行回调 - 用于CLI风格处理指示器 */
+  onCancel?: () => void;
 }
 
 export const SessionMessages = forwardRef<SessionMessagesRef, SessionMessagesProps>(({
   messageGroups,
   isLoading,
   error,
-  parentRef
+  parentRef,
+  onCancel
 }, ref) => {
   // ✅ 从 SessionContext 获取配置和回调，避免 Props Drilling
   const { settings, sessionId, projectId, projectPath, onLinkDetected, onRevert, getPromptIndexForMessage } = useSession();
@@ -274,6 +278,12 @@ export const SessionMessages = forwardRef<SessionMessagesRef, SessionMessagesPro
           })}
         </AnimatePresence>
       </div>
+
+      {/* CLI风格的处理状态指示器 - 显示在消息列表底部 */}
+      <CliProcessingIndicator
+        isProcessing={isLoading && messageGroups.length > 0}
+        onCancel={onCancel}
+      />
 
       {/* Error indicator */}
       {error && (

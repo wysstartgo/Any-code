@@ -915,6 +915,7 @@ const ClaudeCodeSessionInner: React.FC<ClaudeCodeSessionProps> = ({
         isLoading={isLoading}
         error={error}
         parentRef={parentRef}
+        onCancel={handleCancelExecution}
       />
     </SessionProvider>
   );

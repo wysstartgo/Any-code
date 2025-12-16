@@ -1348,5 +1348,9 @@
     "cacheRead": "快取讀取",
     "criticalWarning": "上下文視窗接近上限，建議開始新對話",
     "highWarning": "上下文使用率較高"
+  },
+  "cliIndicator": {
+    "escToCancel": "esc 取消",
+    "thinking": "思考中"
   }
 }

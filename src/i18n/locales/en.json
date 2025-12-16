@@ -1368,5 +1368,9 @@
     "cacheRead": "Cache Read",
     "criticalWarning": "Context window nearly full, consider starting a new session",
     "highWarning": "Context usage is high"
+  },
+  "cliIndicator": {
+    "escToCancel": "esc to cancel",
+    "thinking": "thinking"
   }
 }
