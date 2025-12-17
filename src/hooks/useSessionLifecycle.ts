@@ -4,6 +4,7 @@ import { api, type Session } from '@/lib/api';
 import { normalizeUsageData } from '@/lib/utils';
 import type { ClaudeStreamMessage } from '@/types/claude';
 import { codexConverter } from '@/lib/codexConverter';
+import { convertGeminiSessionDetailToClaudeMessages } from '@/lib/geminiConverter';
 
 /**
  * useSessionLifecycle Hook
@@ -83,89 +84,7 @@ export function useSessionLifecycle(config: UseSessionLifecycleConfig): UseSessi
       if (engine === 'gemini') {
         try {
           const geminiDetail = await api.getGeminiSessionDetail(session.project_path, session.id);
-
-          // Convert Gemini messages to ClaudeStreamMessage format
-          history = geminiDetail.messages.flatMap((msg) => {
-            const messages: ClaudeStreamMessage[] = [];
-
-            if (msg.type === 'user') {
-              messages.push({
-                type: 'user' as const,
-                message: {
-                  content: msg.content ? [{ type: 'text', text: msg.content }] : []
-                },
-                timestamp: msg.timestamp,
-                engine: 'gemini' as const,
-              });
-            } else {
-              // Gemini assistant message
-              const content: any[] = [];
-
-              // Add tool calls if present
-              if (msg.toolCalls && msg.toolCalls.length > 0) {
-                for (const toolCall of msg.toolCalls) {
-                  // Add tool_use content block
-                  content.push({
-                    type: 'tool_use',
-                    id: toolCall.id,
-                    name: toolCall.name,
-                    input: toolCall.args,
-                  });
-
-                  // If there's a result, add it as a separate user message (tool_result)
-                  if (toolCall.result !== undefined) {
-                    // 使用实际的 result 数据，而不是 resultDisplay（摘要文本）
-                    // Gemini result 格式: [{functionResponse: {response: {output: "..."}}}]
-                    let resultContent = toolCall.result;
-
-                    // 尝试提取 Gemini functionResponse 格式的实际输出
-                    if (Array.isArray(toolCall.result)) {
-                      const firstResult = toolCall.result[0];
-                      if (firstResult?.functionResponse?.response?.output !== undefined) {
-                        resultContent = firstResult.functionResponse.response.output;
-                      }
-                    }
-
-                    messages.push({
-                      type: 'user' as const,
-                      message: {
-                        content: [{
-                          type: 'tool_result',
-                          tool_use_id: toolCall.id,
-                          content: typeof resultContent === 'string' ? resultContent : JSON.stringify(resultContent),
-                          is_error: toolCall.status === 'error',
-                        }]
-                      },
-                      timestamp: toolCall.timestamp || msg.timestamp,
-                      engine: 'gemini' as const,
-                    });
-                  }
-                }
-              }
-
-              // Add text content if present
-              if (msg.content) {
-                content.push({
-                  type: 'text',
-                  text: msg.content,
-                });
-              }
-
-              // Add assistant message
-              messages.push({
-                type: 'assistant' as const,
-                message: {
-                  content: content.length > 0 ? content : [{ type: 'text', text: '' }],
-                  role: 'assistant'
-                },
-                timestamp: msg.timestamp,
-                engine: 'gemini' as const,
-                model: msg.model,
-              });
-            }
-
-            return messages;
-          });
+          history = convertGeminiSessionDetailToClaudeMessages(geminiDetail);
         } catch (geminiErr) {
           console.error('[useSessionLifecycle] Failed to load Gemini session:', geminiErr);
           throw geminiErr;

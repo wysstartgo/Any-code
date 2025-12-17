@@ -131,6 +131,56 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   },
 
   // ============================================================================
+  // Gemini Models (Google)
+  // Source: https://ai.google.dev/gemini-api/docs/pricing (Last updated 2025-12-15 UTC)
+  // Notes:
+  // - Prices are per 1M tokens (USD), standard tier.
+  // - Some models have tiered pricing based on prompt length (<=200k vs >200k).
+  // - Output price already includes thinking tokens.
+  // - Context caching has a separate per-token price (storage fee not modeled here).
+  // ============================================================================
+
+  // Gemini 3 Pro Preview (tiered pricing; here is the <=200k tier)
+  'gemini-3-pro-preview': {
+    input: 2.00,
+    output: 12.00,
+    cacheWrite: 0.0,
+    cacheRead: 0.20
+  },
+
+  // Gemini 2.5 Pro (tiered pricing; here is the <=200k tier)
+  'gemini-2.5-pro': {
+    input: 1.25,
+    output: 10.00,
+    cacheWrite: 0.0,
+    cacheRead: 0.125
+  },
+
+  // Gemini 2.5 Flash
+  'gemini-2.5-flash': {
+    input: 0.30,
+    output: 2.50,
+    cacheWrite: 0.0,
+    cacheRead: 0.03
+  },
+
+  // Gemini 2.5 Flash-Lite
+  'gemini-2.5-flash-lite': {
+    input: 0.10,
+    output: 0.40,
+    cacheWrite: 0.0,
+    cacheRead: 0.01
+  },
+
+  // Gemini 2.0 Flash (treat -exp variants as the same family)
+  'gemini-2.0-flash': {
+    input: 0.10,
+    output: 0.40,
+    cacheWrite: 0.0,
+    cacheRead: 0.025
+  },
+
+  // ============================================================================
   // Default fallback (use latest Sonnet 4.5 pricing)
   // ============================================================================
   'default': {
@@ -153,7 +203,10 @@ export function getPricingForModel(model?: string, engine?: string): ModelPricin
   if (!model) {
     // 根据引擎选择默认定价
     if (engine === 'codex') {
-      return MODEL_PRICING['codex-mini'];
+      return MODEL_PRICING['codex-mini-latest'];
+    }
+    if (engine === 'gemini') {
+      return MODEL_PRICING['gemini-2.5-pro'];
     }
     return MODEL_PRICING['default'];
   }
@@ -168,6 +221,31 @@ export function getPricingForModel(model?: string, engine?: string): ModelPricin
   const atIndex = normalized.indexOf('@');
   if (atIndex !== -1) {
     normalized = normalized.substring(0, atIndex);
+  }
+
+  // ============================================================================
+  // Gemini Models (Google)
+  // ============================================================================
+
+  if (normalized.includes('gemini')) {
+    if (normalized.includes('gemini-3-pro') || normalized.includes('gemini_3_pro')) {
+      return MODEL_PRICING['gemini-3-pro-preview'];
+    }
+    if (normalized.includes('2.5-pro') || normalized.includes('2_5_pro')) {
+      return MODEL_PRICING['gemini-2.5-pro'];
+    }
+    if (normalized.includes('2.5-flash-lite') || normalized.includes('2_5_flash_lite')) {
+      return MODEL_PRICING['gemini-2.5-flash-lite'];
+    }
+    if (normalized.includes('2.5-flash') || normalized.includes('2_5_flash')) {
+      return MODEL_PRICING['gemini-2.5-flash'];
+    }
+    if (normalized.includes('2.0-flash') || normalized.includes('2_0_flash')) {
+      return MODEL_PRICING['gemini-2.0-flash'];
+    }
+
+    // Unknown Gemini model - default to Gemini 2.5 Pro
+    return MODEL_PRICING['gemini-2.5-pro'];
   }
 
   // ============================================================================
@@ -255,9 +333,42 @@ export function getPricingForModel(model?: string, engine?: string): ModelPricin
     return MODEL_PRICING['codex-mini-latest'];
   }
 
+  // Gemini 引擎使用 Gemini 默认定价
+  if (engine === 'gemini') {
+    return MODEL_PRICING['gemini-2.5-pro'];
+  }
+
   // Unknown model - use default
   console.warn(`[pricing] Unknown model: '${model}'. Using default pricing.`);
   return MODEL_PRICING['default'];
+}
+
+function getGeminiTieredPricing(model: string, promptTokens: number): ModelPricing {
+  const lower = model.toLowerCase();
+  const isOver200k = promptTokens > 200_000;
+
+  // Gemini 3 Pro Preview
+  if (lower.includes('gemini-3-pro') || lower.includes('gemini_3_pro')) {
+    return {
+      input: isOver200k ? 4.00 : 2.00,
+      output: isOver200k ? 18.00 : 12.00,
+      cacheWrite: 0.0,
+      cacheRead: isOver200k ? 0.40 : 0.20,
+    };
+  }
+
+  // Gemini 2.5 Pro
+  if (lower.includes('2.5-pro') || lower.includes('2_5_pro')) {
+    return {
+      input: isOver200k ? 2.50 : 1.25,
+      output: isOver200k ? 15.00 : 10.00,
+      cacheWrite: 0.0,
+      cacheRead: isOver200k ? 0.25 : 0.125,
+    };
+  }
+
+  // Non-tiered Gemini models use the standard pricing table
+  return getPricingForModel(model, 'gemini');
 }
 
 /**
@@ -277,7 +388,16 @@ export function calculateMessageCost(
   model?: string,
   engine?: string
 ): number {
-  const pricing = getPricingForModel(model, engine);
+  const resolvedModel = model || (engine === 'gemini' ? 'gemini-2.5-pro' : undefined);
+
+  // Gemini: tiered pricing depends on prompt length (<=200k vs >200k)
+  const pricing =
+    engine === 'gemini' && resolvedModel
+      ? getGeminiTieredPricing(
+          resolvedModel,
+          tokens.input_tokens + tokens.cache_creation_tokens + tokens.cache_read_tokens
+        )
+      : getPricingForModel(resolvedModel, engine);
 
   const inputCost = (tokens.input_tokens / 1_000_000) * pricing.input;
   const outputCost = (tokens.output_tokens / 1_000_000) * pricing.output;

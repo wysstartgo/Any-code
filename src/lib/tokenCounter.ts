@@ -127,6 +127,23 @@ export const CODEX_CONTEXT_WINDOWS = {
   'default': 272000,
 } as const;
 
+// ============================================================================
+// Gemini Model Context Windows
+// Source: https://ai.google.dev/gemini-api/docs/models (and model cards)
+// NOTE: Current app configuration uses 1M context across supported Gemini models.
+// ============================================================================
+
+export const GEMINI_CONTEXT_WINDOWS = {
+  'gemini-3-pro-preview': 1_000_000,
+  'gemini-3-pro-image-preview': 1_000_000,
+  'gemini-2.5-pro': 1_000_000,
+  'gemini-2.5-flash': 1_000_000,
+  'gemini-2.5-flash-lite': 1_000_000,
+  'gemini-2.0-flash': 1_000_000,
+  'gemini-2.0-flash-exp': 1_000_000,
+  'default': 1_000_000,
+} as const;
+
 /**
  * 获取模型的上下文窗口大小
  * @param model - 模型名称
@@ -134,6 +151,31 @@ export const CODEX_CONTEXT_WINDOWS = {
  * @returns 上下文窗口大小（tokens）
  */
 export function getContextWindowSize(model?: string, engine?: string): number {
+  // Gemini 引擎
+  if (engine === 'gemini') {
+    if (!model) return GEMINI_CONTEXT_WINDOWS['default'];
+
+    const lowerModel = model.toLowerCase();
+
+    // 处理 Vertex AI / provider 前缀与版本后缀
+    const normalized = lowerModel
+      .replace('google.', '')
+      .replace('vertex.', '')
+      .replace('-v1:0', '')
+      .split('@')[0];
+
+    if (normalized in GEMINI_CONTEXT_WINDOWS) {
+      return GEMINI_CONTEXT_WINDOWS[normalized as keyof typeof GEMINI_CONTEXT_WINDOWS];
+    }
+
+    // 常见变体：-exp / -preview / 版本日期后缀等 -> 回退到家族默认 1M
+    if (normalized.startsWith('gemini-')) {
+      return GEMINI_CONTEXT_WINDOWS['default'];
+    }
+
+    return GEMINI_CONTEXT_WINDOWS['default'];
+  }
+
   // Codex 引擎
   if (engine === 'codex') {
     if (!model) return CODEX_CONTEXT_WINDOWS['default'];

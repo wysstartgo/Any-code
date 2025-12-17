@@ -599,6 +599,7 @@ async fn execute_gemini_process(
     let session_id_complete = session_id.clone();
 
     // Spawn task to read stdout (JSONL events)
+    let model_for_messages = model.clone();
     tokio::spawn(async move {
         let mut reader = BufReader::new(stdout).lines();
         let mut real_cli_session_id_emitted = false;
@@ -615,7 +616,7 @@ async fn execute_gemini_process(
             log::trace!("Gemini output: {}", line);
 
             // Try to parse and convert to unified format
-            let unified_message = if let Ok(mut event) = parse_gemini_line(&line) {
+            let mut unified_message = if let Ok(mut event) = parse_gemini_line(&line) {
                 // 🔧 FIX: Check if this is an init event with real Gemini CLI session ID
                 if !real_cli_session_id_emitted {
                     if let super::types::GeminiStreamEvent::Init {
@@ -756,6 +757,23 @@ async fn execute_gemini_process(
                     }
                 })
             };
+
+            // Ensure engine/model are present for consistent frontend cost/context calculations
+            if let Some(obj) = unified_message.as_object_mut() {
+                obj.entry("engine")
+                    .or_insert_with(|| serde_json::Value::String("gemini".to_string()));
+
+                let should_set_model = match obj.get("model") {
+                    None => true,
+                    Some(v) => v.is_null() || v.as_str().map(|s| s.trim().is_empty()).unwrap_or(false),
+                };
+                if should_set_model {
+                    obj.insert(
+                        "model".to_string(),
+                        serde_json::Value::String(model_for_messages.clone()),
+                    );
+                }
+            }
 
             let unified_line = serde_json::to_string(&unified_message).unwrap_or(line.clone());
 

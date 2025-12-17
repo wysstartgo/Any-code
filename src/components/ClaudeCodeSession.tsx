@@ -34,6 +34,7 @@ import { PlanModeStatusBar } from '@/components/widgets/system/PlanModeStatusBar
 import { UserQuestionProvider, useUserQuestion } from '@/contexts/UserQuestionContext';
 import { AskUserQuestionDialog } from '@/components/dialogs/AskUserQuestionDialog';
 import { codexConverter } from '@/lib/codexConverter';
+import { convertGeminiSessionDetailToClaudeMessages } from '@/lib/geminiConverter';
 import { SessionHeader } from "./session/SessionHeader";
 import { SessionMessages, type SessionMessagesRef } from "./session/SessionMessages";
 
@@ -755,75 +756,7 @@ const ClaudeCodeSessionInner: React.FC<ClaudeCodeSessionProps> = ({
       if (isGemini) {
         // Gemini 使用专门的 API 加载历史
         const geminiDetail = await api.getGeminiSessionDetail(projectPath, effectiveSession.id);
-
-        // 将 Gemini 消息转换为 ClaudeStreamMessage 格式（与 useSessionLifecycle 保持一致）
-        const convertedMessages: any[] = geminiDetail.messages.flatMap((msg: any) => {
-          const messages: any[] = [];
-
-          if (msg.type === 'user') {
-            messages.push({
-              type: 'user',
-              message: {
-                content: msg.content ? [{ type: 'text', text: msg.content }] : []
-              },
-              timestamp: msg.timestamp,
-              engine: 'gemini',
-            });
-          } else {
-            // Gemini assistant message
-            const content: any[] = [];
-
-            // Add tool calls if present
-            if (msg.toolCalls && msg.toolCalls.length > 0) {
-              for (const toolCall of msg.toolCalls) {
-                content.push({
-                  type: 'tool_use',
-                  id: toolCall.id,
-                  name: toolCall.name,
-                  input: toolCall.args,
-                });
-
-                if (toolCall.result !== undefined) {
-                  messages.push({
-                    type: 'user',
-                    message: {
-                      content: [{
-                        type: 'tool_result',
-                        tool_use_id: toolCall.id,
-                        content: toolCall.resultDisplay || JSON.stringify(toolCall.result),
-                        is_error: toolCall.status === 'error',
-                      }]
-                    },
-                    timestamp: toolCall.timestamp || msg.timestamp,
-                    engine: 'gemini',
-                  });
-                }
-              }
-            }
-
-            if (msg.content) {
-              content.push({
-                type: 'text',
-                text: msg.content,
-              });
-            }
-
-            messages.push({
-              type: 'assistant',
-              message: {
-                content: content.length > 0 ? content : [{ type: 'text', text: '' }],
-                role: 'assistant'
-              },
-              timestamp: msg.timestamp,
-              engine: 'gemini',
-              model: msg.model,
-            });
-          }
-
-          return messages;
-        });
-
-        setMessages(convertedMessages);
+        setMessages(convertGeminiSessionDetailToClaudeMessages(geminiDetail) as any);
       } else {
         // Claude/Codex 使用原有 API
         const history = await api.loadSessionHistory(

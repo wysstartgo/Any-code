@@ -175,8 +175,8 @@ export const ControlBar: React.FC<ControlBarProps> = ({
         </motion.div>
       )}
 
-      {/* Context Window Indicator - Claude 和 Codex 引擎显示 */}
-      {(executionEngineConfig.engine === 'claude' || executionEngineConfig.engine === 'codex') && hasMessages && messages && (
+      {/* Context Window Indicator - Claude / Codex / Gemini 引擎显示 */}
+      {(executionEngineConfig.engine === 'claude' || executionEngineConfig.engine === 'codex' || executionEngineConfig.engine === 'gemini') && hasMessages && messages && (
         <ContextWindowIndicator
           messages={messages}
           model={contextWindowModel}

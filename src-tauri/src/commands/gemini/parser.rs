@@ -5,7 +5,7 @@
 
 use serde_json::{json, Value};
 
-use super::types::GeminiStreamEvent;
+use super::types::{GeminiStats, GeminiStreamEvent, TokenUsage};
 
 // ============================================================================
 // Event Parsing
@@ -174,23 +174,25 @@ pub fn convert_to_unified_message(event: &GeminiStreamEvent) -> Value {
             })
         }
 
-        GeminiStreamEvent::Result { status, stats } => {
-            let usage = stats.as_ref().map(|s| {
-                json!({
-                    "input_tokens": s.input_tokens.unwrap_or(0),
-                    "output_tokens": s.output_tokens.unwrap_or(0)
-                })
-            });
+        GeminiStreamEvent::Result {
+            status,
+            stats,
+            usage_metadata,
+            timestamp,
+        } => {
+            let usage = build_unified_usage(stats.as_ref(), usage_metadata.as_ref());
 
             json!({
                 "type": "result",
                 "subtype": "success",
                 "status": status,
+                "timestamp": timestamp,
                 "usage": usage,
                 "geminiMetadata": {
                     "provider": "gemini",
                     "eventType": "result",
                     "stats": stats,
+                    "usageMetadata": usage_metadata,
                     "durationMs": stats.as_ref().and_then(|s| s.duration_ms),
                     "toolCalls": stats.as_ref().and_then(|s| s.tool_calls)
                 }
@@ -296,12 +298,30 @@ pub fn convert_raw_to_unified_message(raw: &Value) -> Value {
                 });
             }
             "result" => {
+                let stats = raw
+                    .get("stats")
+                    .and_then(|v| serde_json::from_value::<GeminiStats>(v.clone()).ok());
+
+                let usage_metadata = raw
+                    .get("usageMetadata")
+                    .or_else(|| raw.get("usage_metadata"))
+                    .or_else(|| raw.get("usage"))
+                    .or_else(|| raw.get("tokens"))
+                    .and_then(|v| serde_json::from_value::<TokenUsage>(v.clone()).ok());
+
+                let usage = build_unified_usage(stats.as_ref(), usage_metadata.as_ref());
+
                 return json!({
                     "type": "result",
                     "subtype": "success",
+                    "status": raw.get("status"),
+                    "timestamp": raw.get("timestamp"),
+                    "usage": usage,
                     "geminiMetadata": {
                         "provider": "gemini",
                         "eventType": "result",
+                        "stats": stats,
+                        "usageMetadata": usage_metadata,
                         "raw": raw
                     }
                 });
@@ -402,15 +422,56 @@ pub fn convert_raw_to_unified_message(raw: &Value) -> Value {
 /// Extract usage information from a Gemini result event
 pub fn extract_usage(event: &GeminiStreamEvent) -> Option<(u64, u64)> {
     if let GeminiStreamEvent::Result {
-        stats: Some(stats), ..
+        stats: Some(stats),
+        usage_metadata,
+        ..
     } = event
     {
-        let input = stats.input_tokens.unwrap_or(0);
-        let output = stats.output_tokens.unwrap_or(0);
-        Some((input, output))
+        if let Some(usage) = build_unified_usage(Some(stats), usage_metadata.as_ref()) {
+            let input = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+            let output = usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+            Some((input, output))
+        } else {
+            let input = stats.input_tokens.unwrap_or(0);
+            let output = stats.output_tokens.unwrap_or(0);
+            Some((input, output))
+        }
     } else {
         None
     }
+}
+
+fn build_unified_usage(stats: Option<&GeminiStats>, usage_metadata: Option<&TokenUsage>) -> Option<Value> {
+    // Prefer usageMetadata when present: it can contain cached/thoughts/tool token breakdowns.
+    if let Some(meta) = usage_metadata {
+        let prompt = meta.prompt_token_count.unwrap_or(0);
+        let candidates = meta.candidates_token_count.unwrap_or(0);
+        let thoughts = meta.thoughts_token_count.unwrap_or(0);
+        let tool = meta.tool_use_prompt_token_count.unwrap_or(0);
+        let cached = meta.cached_content_token_count.unwrap_or(0);
+
+        let input_tokens = prompt.saturating_add(tool);
+        let output_tokens = candidates.saturating_add(thoughts);
+
+        if input_tokens > 0 || output_tokens > 0 || cached > 0 {
+            let mut obj = serde_json::Map::new();
+            obj.insert("input_tokens".to_string(), json!(input_tokens));
+            obj.insert("output_tokens".to_string(), json!(output_tokens));
+            if cached > 0 {
+                // Use the Codex-compatible name so frontend can reuse normalization logic:
+                // normalizeRawUsage() will treat cached_input_tokens as a subset of input_tokens.
+                obj.insert("cached_input_tokens".to_string(), json!(cached));
+            }
+            return Some(Value::Object(obj));
+        }
+    }
+
+    stats.map(|s| {
+        json!({
+            "input_tokens": s.input_tokens.unwrap_or(0),
+            "output_tokens": s.output_tokens.unwrap_or(0)
+        })
+    })
 }
 
 /// Extract session ID from an init event

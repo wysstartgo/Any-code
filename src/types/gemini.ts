@@ -210,7 +210,7 @@ export const GEMINI_MODELS: GeminiModelInfo[] = [
  */
 export const DEFAULT_GEMINI_CONFIG: GeminiConfig = {
   authMethod: "google_oauth",
-  defaultModel: "gemini-3-pro-preview",
+  defaultModel: "gemini-2.5-pro",
   approvalMode: "auto_edit",
 };
 

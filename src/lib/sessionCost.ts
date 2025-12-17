@@ -36,6 +36,7 @@ interface MutableBillingEvent extends BillingEvent {
 
 const MODEL_FALLBACK = 'claude-sonnet-4.5';
 const CODEX_MODEL_FALLBACK = 'codex-mini-latest';
+const GEMINI_MODEL_FALLBACK = 'gemini-2.5-pro';
 
 /**
  * 检测消息的引擎类型
@@ -48,6 +49,9 @@ function getEngineType(message: ClaudeStreamMessage): string {
   // 检查 codexMetadata 字段（Codex 特有）
   if ((message as any).codexMetadata) return 'codex';
 
+  // 检查 geminiMetadata 字段（Gemini 特有）
+  if ((message as any).geminiMetadata?.provider === 'gemini') return 'gemini';
+
   // 默认为 Claude
   return 'claude';
 }
@@ -56,11 +60,14 @@ export function aggregateSessionCost(messages: ClaudeStreamMessage[]): SessionCo
   const eventMap = new Map<string, MutableBillingEvent>();
 
   messages.forEach((message, index) => {
-    // Claude: 只处理 assistant 消息
-    // Codex: 只处理 token_count 事件的 system 消息（增量 usage）
-    const isAssistant = message.type === 'assistant';
-    const isCodexUsageMessage = message.type === 'system' && (message as any).usage;
     const engine = getEngineType(message);
+
+    // Claude: 只处理 assistant 消息
+    // Codex: 只处理 token_count/turn.completed 等 system usage 消息（增量 usage）
+    // Gemini: 只处理 result 消息（usage 快照，按 turn 计费）
+    const isClaudeBillable = engine === 'claude' && message.type === 'assistant';
+    const isCodexBillable = engine === 'codex' && message.type === 'system' && (message as any).usage;
+    const isGeminiBillable = engine === 'gemini' && message.type === 'result' && (message as any).usage;
 
     // 对于 Codex 引擎，需要特殊处理以避免重复计算：
     // - thread_token_usage_updated (assistant 类型): 累计值，跳过（不应累加）
@@ -75,7 +82,7 @@ export function aggregateSessionCost(messages: ClaudeStreamMessage[]): SessionCo
       }
     }
 
-    if (!isAssistant && !isCodexUsageMessage) {
+    if (!isClaudeBillable && !isCodexBillable && !isGeminiBillable) {
       return;
     }
 
@@ -233,7 +240,9 @@ function getModelName(message: ClaudeStreamMessage, engine?: string): string {
   }
 
   // 根据引擎返回对应的默认模型
-  return engine === 'codex' ? CODEX_MODEL_FALLBACK : MODEL_FALLBACK;
+  if (engine === 'codex') return CODEX_MODEL_FALLBACK;
+  if (engine === 'gemini') return GEMINI_MODEL_FALLBACK;
+  return MODEL_FALLBACK;
 }
 
 

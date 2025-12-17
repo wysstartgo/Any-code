@@ -568,7 +568,9 @@ export function usePromptExecution(config: UsePromptExecutionConfig): UsePromptE
                   subtype: data.subtype || 'success',
                   usage: data.usage,
                   timestamp: data.timestamp,
-                  engine: 'gemini' as const
+                  engine: 'gemini' as const,
+                  model: data.model,
+                  geminiMetadata: data.geminiMetadata,
                 };
               }
 

@@ -64,6 +64,9 @@ pub enum GeminiStreamEvent {
     Result {
         status: String,
         stats: Option<GeminiStats>,
+        /// Optional Gemini API usage metadata (when present in output)
+        usage_metadata: Option<TokenUsage>,
+        timestamp: Option<String>,
     },
 }
 
@@ -172,6 +175,15 @@ impl GeminiStreamEvent {
                 stats: value
                     .get("stats")
                     .and_then(|v| serde_json::from_value(v.clone()).ok()),
+                usage_metadata: value
+                    .get("usageMetadata")
+                    .or_else(|| value.get("usage_metadata"))
+                    .or_else(|| value.get("usage"))
+                    .and_then(|v| serde_json::from_value(v.clone()).ok()),
+                timestamp: value
+                    .get("timestamp")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
             }),
             _ => None,
         }
@@ -187,6 +199,55 @@ pub struct GeminiStats {
     pub output_tokens: Option<u64>,
     pub duration_ms: Option<u64>,
     pub tool_calls: Option<u32>,
+}
+
+// ============================================================================
+// Token Usage Types
+// ============================================================================
+
+/// Token usage / usageMetadata returned by Gemini APIs (and token summaries in Gemini CLI history)
+///
+/// This struct is intentionally flexible and supports multiple naming conventions:
+/// - Gemini API: `promptTokenCount`, `candidatesTokenCount`, `totalTokenCount`, ...
+/// - Some SDKs / logs: `prompt_token_count`, `candidates_token_count`, ...
+/// - Gemini CLI aggregated tokens: `prompt`, `candidates`, `total`, `cached`, `thoughts`, `tool`
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct TokenUsage {
+    /// Prompt/input token count
+    #[serde(rename = "promptTokenCount", alias = "prompt_token_count", alias = "prompt")]
+    pub prompt_token_count: Option<u64>,
+
+    /// Candidate/output token count (excludes thinking tokens in some APIs)
+    #[serde(
+        rename = "candidatesTokenCount",
+        alias = "candidates_token_count",
+        alias = "candidates"
+    )]
+    pub candidates_token_count: Option<u64>,
+
+    /// Total token count (prompt + output + other categories)
+    #[serde(rename = "totalTokenCount", alias = "total_token_count", alias = "total")]
+    pub total_token_count: Option<u64>,
+
+    /// Cached content token count (subset of prompt tokens)
+    #[serde(
+        rename = "cachedContentTokenCount",
+        alias = "cached_content_token_count",
+        alias = "cached"
+    )]
+    pub cached_content_token_count: Option<u64>,
+
+    /// Thinking/reasoning token count
+    #[serde(rename = "thoughtsTokenCount", alias = "thoughts_token_count", alias = "thoughts")]
+    pub thoughts_token_count: Option<u64>,
+
+    /// Tool-use prompt tokens
+    #[serde(
+        rename = "toolUsePromptTokenCount",
+        alias = "tool_use_prompt_token_count",
+        alias = "tool"
+    )]
+    pub tool_use_prompt_token_count: Option<u64>,
 }
 
 // ============================================================================
