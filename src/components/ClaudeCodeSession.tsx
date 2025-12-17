@@ -207,6 +207,36 @@ const ClaudeCodeSessionInner: React.FC<ClaudeCodeSessionProps> = ({
       isLoading
     });
 
+  // 🆕 Fix: Scroll to bottom when session history is loaded
+  const hasScrolledToBottomRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    // Check if we have messages and parentRef is attached
+    if (displayableMessages.length > 0 && parentRef.current) {
+      const currentSessionId = session?.id || 'new_session';
+      
+      // If we haven't scrolled for this session yet
+      if (hasScrolledToBottomRef.current !== currentSessionId) {
+        // Use a small delay to ensure virtualizer has calculated sizes
+        const timer = setTimeout(() => {
+          if (parentRef.current) {
+            // Force scroll to bottom
+            parentRef.current.scrollTop = parentRef.current.scrollHeight;
+            
+            // Sync with smart auto-scroll state
+            setUserScrolled(false);
+            setShouldAutoScroll(true);
+            
+            // Mark as done for this session
+            hasScrolledToBottomRef.current = currentSessionId;
+          }
+        }, 150); // 150ms delay for stability
+        
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [displayableMessages.length, session?.id, setUserScrolled, setShouldAutoScroll]);
+
   // ============================================================================
   // MESSAGE-LEVEL OPERATIONS (Fine-grained Undo/Redo)
   // ============================================================================

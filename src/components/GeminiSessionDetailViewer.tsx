@@ -7,7 +7,7 @@
  * - Timestamps and metadata
  */
 
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
 import type { GeminiSessionDetail } from '@/types/gemini';
 import { Button } from '@/components/ui/button';
@@ -49,16 +49,50 @@ export const GeminiSessionDetailViewer: React.FC<GeminiSessionDetailViewerProps>
   }, [projectPath, sessionId]);
 
   // 进入历史会话详情时，默认滚动到最底部以显示最新消息
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!session) return;
-    if (autoScrolledSessionIdRef.current === sessionId) return;
-
+    
+    // 获取滚动容器
     const el = messagesScrollRef.current;
     if (!el) return;
 
-    el.scrollTop = el.scrollHeight;
-    autoScrolledSessionIdRef.current = sessionId;
-  }, [session, sessionId]);
+    // 标记是否需要保持在底部
+    let shouldStick = true;
+    
+    const scrollToBottom = () => {
+      if (shouldStick && el) {
+        el.scrollTop = el.scrollHeight;
+      }
+    };
+    
+    // 立即尝试滚动
+    scrollToBottom();
+    
+    // 监听内容大小变化
+    const observer = new ResizeObserver(() => {
+      scrollToBottom();
+    });
+    
+    // 监听内容区域（ScrollArea 的直接子元素）
+    if (el.firstElementChild) {
+      observer.observe(el.firstElementChild);
+    } else {
+      observer.observe(el);
+    }
+    
+    // 1秒后停止强制滚动，允许用户自由滚动
+    const timer = setTimeout(() => {
+      shouldStick = false;
+      observer.disconnect();
+      autoScrolledSessionIdRef.current = sessionId;
+    }, 1000);
+
+    return () => {
+      shouldStick = false;
+      observer.disconnect();
+      clearTimeout(timer);
+    };
+  }, [session?.sessionId]);
 
   const loadSession = async () => {
     if (!projectPath || !sessionId) return;
