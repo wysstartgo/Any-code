@@ -9,7 +9,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:build": "tauri build",
+    "tauri:build": "pwsh -File build.ps1",
+    "tauri:build-ci": "tauri build",
     "tauri:build-fast": "tauri build --profile dev-release",
     "tauri:dev": "tauri dev"
   },
