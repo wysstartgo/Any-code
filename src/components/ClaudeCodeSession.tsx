@@ -106,6 +106,9 @@ const ClaudeCodeSessionInner: React.FC<ClaudeCodeSessionProps> = ({
   const [_rawJsonlOutput, setRawJsonlOutput] = useState<string[]>([]); // Kept for hooks, not directly used
   const [isFirstPrompt, setIsFirstPrompt] = useState(!session); // Key state for session continuation
   const [extractedSessionInfo, setExtractedSessionInfo] = useState<{ sessionId: string; projectId: string; engine?: 'claude' | 'codex' | 'gemini' } | null>(null);
+  // 🔧 FIX: 标记会话是否不存在（历史记录文件未找到）
+  // 当为 true 时，effectiveSession 应返回 null，显示路径选择界面
+  const [sessionNotFound, setSessionNotFound] = useState(false);
   const [claudeSessionId, setClaudeSessionId] = useState<string | null>(null);
   const [codexRateLimits, setCodexRateLimits] = useState<CodexRateLimits | null>(null);
 
@@ -290,6 +293,14 @@ const ClaudeCodeSessionInner: React.FC<ClaudeCodeSessionProps> = ({
     onMessagesUpdate: setMessages
   });
 
+  // 🔧 FIX: 处理会话历史不存在的情况，重置到初始状态
+  const handleSessionNotFound = useCallback(() => {
+    console.debug('[ClaudeCodeSession] Session not found, resetting to initial state');
+    setSessionNotFound(true);
+    // 重置为新会话状态
+    setIsFirstPrompt(true);
+  }, []);
+
   // ✅ Refactored: Use custom Hook for session lifecycle (AFTER refs and translation Hook are declared)
   const {
     loadSessionHistory,
@@ -308,7 +319,8 @@ const ClaudeCodeSessionInner: React.FC<ClaudeCodeSessionProps> = ({
     setClaudeSessionId,
     setCodexRateLimits,
     initializeProgressiveTranslation,
-    processMessageWithTranslation
+    processMessageWithTranslation,
+    onSessionNotFound: handleSessionNotFound
   });
 
   // Keep ref in sync with state
@@ -335,6 +347,11 @@ const ClaudeCodeSessionInner: React.FC<ClaudeCodeSessionProps> = ({
 
   // Get effective session info (from prop or extracted) - use useMemo to ensure it updates
   const effectiveSession = useMemo(() => {
+    // 🔧 FIX: 当会话历史不存在时，返回 null 以显示路径选择界面
+    // 这处理了从 localStorage 恢复的无效会话（历史文件已删除或不存在）
+    if (sessionNotFound) {
+      return null;
+    }
     if (session) return session;
     if (extractedSessionInfo) {
       return {
@@ -346,7 +363,7 @@ const ClaudeCodeSessionInner: React.FC<ClaudeCodeSessionProps> = ({
       } as Session;
     }
     return null;
-  }, [session, extractedSessionInfo, projectPath]);
+  }, [session, extractedSessionInfo, projectPath, sessionNotFound]);
 
   useEffect(() => {
     if (executionEngineConfig.engine !== 'codex') {

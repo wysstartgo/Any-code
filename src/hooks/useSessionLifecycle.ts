@@ -35,6 +35,8 @@ interface UseSessionLifecycleConfig {
   setCodexRateLimits?: React.Dispatch<React.SetStateAction<CodexRateLimits | null>>;
   initializeProgressiveTranslation: (messages: ClaudeStreamMessage[]) => Promise<void>;
   processMessageWithTranslation: (message: ClaudeStreamMessage, payload: string) => Promise<void>;
+  // 🔧 FIX: 当会话历史不存在时的回调，用于重置界面状态
+  onSessionNotFound?: () => void;
 }
 
 interface UseSessionLifecycleReturn {
@@ -57,7 +59,8 @@ export function useSessionLifecycle(config: UseSessionLifecycleConfig): UseSessi
     setClaudeSessionId,
     setCodexRateLimits,
     initializeProgressiveTranslation,
-    processMessageWithTranslation
+    processMessageWithTranslation,
+    onSessionNotFound
   } = config;
 
   // 🔧 修复竞态条件：追踪当前正在加载的会话 ID
@@ -249,6 +252,8 @@ export function useSessionLifecycle(config: UseSessionLifecycleConfig): UseSessi
 
       if (isSessionNotFound) {
         console.debug('[useSessionLifecycle] Session history not found (new session or deleted), continuing without error:', currentSessionId);
+        // 🔧 FIX: 通知父组件会话不存在，让界面重置到初始状态显示路径选择器
+        onSessionNotFound?.();
         // 不显示错误，让用户可以正常使用（开始新会话）
         setIsLoading(false);
         return;
@@ -257,7 +262,7 @@ export function useSessionLifecycle(config: UseSessionLifecycleConfig): UseSessi
       setError("加载会话历史记录失败");
       setIsLoading(false);
     }
-  }, [session, isMountedRef, setIsLoading, setError, setMessages, setRawJsonlOutput, setCodexRateLimits, initializeProgressiveTranslation]);
+  }, [session, isMountedRef, setIsLoading, setError, setMessages, setRawJsonlOutput, setCodexRateLimits, initializeProgressiveTranslation, onSessionNotFound]);
 
   /**
    * 检查会话是否仍在活跃状态
